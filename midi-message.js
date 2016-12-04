@@ -22,7 +22,7 @@ var msgBuffer = new ArrayBuffer(8);
 var eightBitBuffer = new Uint8Array(msgBuffer);
 
 // some common regexs
-var digitRgx = /^\d{1,3}$/;
+var digitRgx = /^\d{1,5}$/;
 var nullRgx = /^\s*$/;
 
 // a list of known controller numbers (array index == controller number)
@@ -277,7 +277,7 @@ module.exports = function(args){
                     is 16383.
                 */
                 out.messageType         = 'pitch bend';
-                out.value               = ((rawMidiMesage[2] << 7) | rawMidiMesage[1]);
+                out.value               = ((rawMidiMessage[2] << 7) | rawMidiMessage[1]);
                 break;
             case 15:
                 out.messageType         = "sysex";
@@ -461,16 +461,54 @@ module.exports = function(args){
             case 'aftertouch (monophonic)':
                 break;
             case 'pitch bend':
+                // we gotta have a channel
+                if (! ((args.hasOwnProperty('channel')) && (digitRgx.test(args.channel)))){
+                    // error message requires channel
+                    this.hasError = true;
+                    this.error = {
+                        thrownBy:       'makeMidiMessage',
+                        severity:       'high',
+                        errorNumber:    3,
+                        errorMessage:   "'pitch bend' messageType requires 'channel' (" + args.channel + ")"
+                    }
+                    console.log(this.error.errorMessage);
+                    return(false);
+                }
+
+                // message number and channel multiplexed on byte 1
+                out.push((14 << 4) | (args.channel -1));
+
+                // we gotta have 'value' which should be an integer between 0 and 16383
+                // 8192 is "zero bend" (i.e. center)
+                if ((! args.hasOwnProperty('value')) || (! digitRgx.test(args.value))){
+                    // error message requires value
+                    this.hasError = true;
+                    this.error = {
+                        thrownBy:       'makeMidiMessage',
+                        severity:       'high',
+                        errorNumber:    3,
+                        errorMessage:   "'pitch bend' messageType requires 'value' between 0 and 16383 (given: " + args.value + ")"
+                    }
+                    console.log(this.error.errorMessage);
+                    return(false);
+                }
+
+                // that's one ghettofabulous binary demux right there
+                out.push(args.value & 0xff);
+                out.push(args.value >> 7 & 0xff);
                 break;
             case 'sysex':
                 break;
         }
 
         /*
-            LEFT OFF HERE (11/27/2016)
-            note on/off works. next steps are to implement the rest of the message types
-            might want to start with sysex, since that's kinda what we're mostly after
-            with this project anyhow
+            LEFT OFF HERE (12/03/2016)
+            note on/off works.
+            pitch bend works.
+            figured out how to write a quick n' dirty lfo in tester.js
+
+            next steps are still to implement the rest of the message types
+            sysex, the mysteries therein are the reason we are here, no?
         */
 
         // might wanna check that we got a legit message before we send it out, but here ya go
